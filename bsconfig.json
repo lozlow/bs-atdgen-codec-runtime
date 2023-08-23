@@ -1,7 +1,7 @@
 {
-  "name": "@ahrefs/bs-atdgen-codec-runtime",
+  "name": "@lozlow/bs-atdgen-codec-runtime",
   "namespace": false,
-  "version": "2.0.1",
+  "version": "2.2.2",
   "bsc-flags": [
     "-bs-no-version-header",
     "-bs-super-errors"
