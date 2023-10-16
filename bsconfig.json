@@ -21,7 +21,7 @@
   },
   "suffix": ".bs.js",
   "bs-dependencies": [
-    "@glennsl/bs-json"
+    "@glennsl/rescript-json-combinators"
   ],
   "bs-dev-dependencies": [
     "@glennsl/bs-jest"

@@ -1,16 +1,22 @@
-include Json_encode
-
-type t<'a> = encoder<'a>
+include JsonCombinators.Json_Encode
 
 let make = f => f
 
 let encode = (f, x) => f(x)
 
-let unit = () => null
+let unit = () => JsonCombinators.Json_Encode.null
 
 let int32 = s => string(Int32.to_string(s))
 
 let int64 = s => string(Int64.to_string(s))
+
+let nullable = (encode, val) =>
+  switch val {
+  | None => JsonCombinators.Json_Encode.null
+  | Some(val) => encode(val)
+  }
+
+let char = char => String.make(1, char)->string
 
 type spec<'a, 'b> = {name: string, data: 'a, encode: t<'b>}
 
@@ -22,13 +28,9 @@ type rec field = F(field_spec<'a>): field
 
 let list = (encode, l) => l |> Array.of_list |> array(encode)
 
-let field = (~default=?, encode, ~name, data) => F(
-  Required({name: name, data: data, encode: encode}, default),
-)
+let field = (~default=?, encode, ~name, data) => F(Required({name, data, encode}, default))
 
-let field_o = (~default=?, encode, ~name, data) => F(
-  Optional({name: name, data: data, encode: encode}, default),
-)
+let field_o = (~default=?, encode, ~name, data) => F(Optional({name, data, encode}, default))
 
 let obj = fields => List.fold_left((acc, F(f)) =>
     switch f {
@@ -51,7 +53,7 @@ let obj = fields => List.fold_left((acc, F(f)) =>
       | (Some(s), None) => list{(name, encode(s)), ...acc}
       }
     }
-  , list{}, fields) |> object_
+  , list{}, fields)->Array.of_list->object
 
 let tuple1 = (f, x) => jsonArray([f(x)])
 

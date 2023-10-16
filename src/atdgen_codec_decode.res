@@ -1,8 +1,7 @@
-include Json_decode
-
 exception DecodeErrorPath(list<string>, string)
+exception DecodeError = JsonCombinators.Json_Decode.DecodeError
 
-type t<'a> = decoder<'a>
+type t<'a> = Js.Json.t => 'a
 
 let make = f => f
 
@@ -28,26 +27,54 @@ let unit = j =>
     raise(DecodeError("Expected null, got " ++ Js.Json.stringify(j)))
   }
 
-let int32 = j => Int32.of_string(string(j))
+let decodeWith = (json, decoder) => {
+  let decode_ = json => {
+    switch json->JsonCombinators.Json_Decode.decode(decoder) {
+    | Ok(json) => json
+    | Error(message) => raise(DecodeError(message))
+    }
+  }
 
-let int64 = j => Int64.of_string(string(j))
+  decode(decode_, json)
+}
+
+let string = json => json->decodeWith(JsonCombinators.Json_Decode.string)
+
+let char = json => {
+  let string = string(json)
+  if string->String.length === 1 {
+    string->String.get(0)
+  } else {
+    raise(DecodeError(`Expected single-character string, got ${json->Js.Json.stringify}`))
+  }
+}
+
+let float = json => json->decodeWith(JsonCombinators.Json_Decode.float)
+
+let int = json => json->decodeWith(JsonCombinators.Json_Decode.int)
+
+let bool = json => json->decodeWith(JsonCombinators.Json_Decode.bool)
+
+let int32 = j => j->string->Int32.of_string
+
+let int64 = j => j->string->Int64.of_string
 
 let array = (decode, json) =>
   if Js.Array.isArray(json) {
-    let source: array<Js.Json.t> = Obj.magic((json: Js.Json.t))
+    let source: array<Js.Json.t> = Obj.magic(json)
     let length = Js.Array.length(source)
     let target = Belt.Array.makeUninitializedUnsafe(length)
     for i in 0 to length - 1 {
       let value = try with_segment(string_of_int(i), decode, Array.unsafe_get(source, i)) catch {
       | DecodeError(msg) =>
-        \"@@"(raise, DecodeError(msg ++ ("\n\tin array at index " ++ string_of_int(i))))
+        raise(DecodeError(msg ++ ("\n\tin array at index " ++ string_of_int(i))))
       }
 
       Array.unsafe_set(target, i, value)
     }
     target
   } else {
-    \"@@"(raise, DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
+    raise(DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
   }
 
 let list = (decode, json) => json |> array(decode) |> Array.to_list
@@ -61,16 +88,15 @@ let pair = (decodeA, decodeB, json) =>
         with_segment("0", decodeA, Array.unsafe_get(source, 0)),
         with_segment("1", decodeB, Array.unsafe_get(source, 1)),
       ) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ "\n\tin pair/tuple2"))
+      | DecodeError(msg) => raise(DecodeError(msg ++ "\n\tin pair/tuple2"))
       }
     } else {
-      \"@@"(
-        raise,
+      raise(
         DecodeError(`Expected array of length 2, got array of length ${length->Belt.Int.toString}`),
       )
     }
   } else {
-    \"@@"(raise, DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
+    raise(DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
   }
 
 let tuple2 = pair
@@ -85,7 +111,7 @@ let tuple3 = (decodeA, decodeB, decodeC, json) =>
         with_segment("1", decodeB, Array.unsafe_get(source, 1)),
         with_segment("2", decodeC, Array.unsafe_get(source, 2)),
       ) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ "\n\tin tuple3"))
+      | DecodeError(msg) => raise(DecodeError(msg ++ "\n\tin tuple3"))
       }
     } else {
       \"@@"(
@@ -94,7 +120,7 @@ let tuple3 = (decodeA, decodeB, decodeC, json) =>
       )
     }
   } else {
-    \"@@"(raise, DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
+    raise(DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
   }
 
 let tuple4 = (decodeA, decodeB, decodeC, decodeD, json) =>
@@ -108,7 +134,7 @@ let tuple4 = (decodeA, decodeB, decodeC, decodeD, json) =>
         with_segment("3", decodeC, Array.unsafe_get(source, 2)),
         with_segment("4", decodeD, Array.unsafe_get(source, 3)),
       ) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ "\n\tin tuple4"))
+      | DecodeError(msg) => raise(DecodeError(msg ++ "\n\tin tuple4"))
       }
     } else {
       \"@@"(
@@ -117,7 +143,7 @@ let tuple4 = (decodeA, decodeB, decodeC, decodeD, json) =>
       )
     }
   } else {
-    \"@@"(raise, DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
+    raise(DecodeError("Expected array, got " ++ Js.Json.stringify(json)))
   }
 
 let dict = (decode, json) =>
@@ -129,14 +155,14 @@ let dict = (decode, json) =>
     for i in 0 to l - 1 {
       let key = Array.unsafe_get(keys, i)
       let value = try with_segment(key, decode, Js.Dict.unsafeGet(source, key)) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ "\n\tin dict"))
+      | DecodeError(msg) => raise(DecodeError(msg ++ "\n\tin dict"))
       }
 
       Js.Dict.set(target, key, value)
     }
     target
   } else {
-    \"@@"(raise, DecodeError("Expected object, got " ++ Js.Json.stringify(json)))
+    raise(DecodeError("Expected object, got " ++ Js.Json.stringify(json)))
   }
 
 let field = (key, decode, json) =>
@@ -145,12 +171,12 @@ let field = (key, decode, json) =>
     switch Js.Dict.get(dict, key) {
     | Some(value) =>
       try with_segment(key, decode, value) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ ("\n\tat field '" ++ (key ++ "'"))))
+      | DecodeError(msg) => raise(DecodeError(msg ++ ("\n\tat field '" ++ (key ++ "'"))))
       }
-    | None => \"@@"(raise, DecodeError(`Expected field '${key}'`))
+    | None => raise(DecodeError(`Expected field '${key}'`))
     }
   } else {
-    \"@@"(raise, DecodeError("Expected object, got " ++ Js.Json.stringify(json)))
+    raise(DecodeError("Expected object, got " ++ Js.Json.stringify(json)))
   }
 
 let obj_array = (f, json) => dict(f, json) |> Js.Dict.entries
@@ -174,20 +200,19 @@ let fieldOptional = (key, decode, json) =>
     | Some(value) if Js.Json.test(value, Null) => None
     | Some(value) =>
       try Some(with_segment(key, decode, value)) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ ("\n\tat field '" ++ (key ++ "'"))))
+      | DecodeError(msg) => raise(DecodeError(msg ++ ("\n\tat field '" ++ (key ++ "'"))))
       }
     }
   } else {
-    \"@@"(raise, DecodeError("Expected object, got " ++ Js.Json.stringify(json)))
+    None
   }
 
-let fieldDefault = (s, default, f) =>
-  fieldOptional(s, f) |> map(x =>
-    switch x {
-    | None => default
-    | Some(s) => s
-    }
-  )
+let fieldDefault = (s, default, f, json) => {
+  switch fieldOptional(s, f, json) {
+  | None => default
+  | Some(s) => s
+  }
+}
 
 let tuple1 = (f, x) =>
   if Js.Array.isArray(x) {
@@ -195,7 +220,7 @@ let tuple1 = (f, x) =>
     let length = Js.Array.length(source)
     if length == 1 {
       try with_segment("0", f, Array.unsafe_get(source, 0)) catch {
-      | DecodeError(msg) => \"@@"(raise, DecodeError(msg ++ "\n\tin tuple1"))
+      | DecodeError(msg) => raise(DecodeError(msg ++ "\n\tin tuple1"))
       }
     } else {
       \"@@"(
@@ -204,8 +229,28 @@ let tuple1 = (f, x) =>
       )
     }
   } else {
-    \"@@"(raise, DecodeError("Expected array, got " ++ Js.Json.stringify(x)))
+    raise(DecodeError("Expected array, got " ++ Js.Json.stringify(x)))
   }
+
+let either = (decoderA, decoderB, json) => {
+  try {
+    decoderA(json)
+  } catch {
+  | DecodeError(messageA) =>
+    try {
+      decoderB(json)
+    } catch {
+    | DecodeError(messageB) => {
+        let formattedErrors = `\n- ${[messageA, messageB]->Js.Array2.joinWith("\n- ")}`
+        raise(
+          DecodeError(
+            `All decoders given to oneOf failed. Here are all the errors:${formattedErrors}\nAnd the JSON being decoded: ${json->Js.Json.stringify}`,
+          ),
+        )
+      }
+    }
+  }
+}
 
 let enum = (l, json) => {
   let constr0 = j => {
@@ -224,9 +269,9 @@ let enum = (l, json) => {
       s,
       () =>
         switch List.assoc(s, l) {
-        | exception Not_found => \"@@"(raise, DecodeError(`unknown constructor "${s}"`))
+        | exception Not_found => raise(DecodeError(`unknown constructor "${s}"`))
         | #Single(a) => a
-        | #Decode(_) => \"@@"(raise, DecodeError(`constructor "${s}" expects arguments`))
+        | #Decode(_) => raise(DecodeError(`constructor "${s}" expects arguments`))
         },
       (),
     )
@@ -235,8 +280,8 @@ let enum = (l, json) => {
       s,
       () =>
         switch List.assoc(s, l) {
-        | exception Not_found => \"@@"(raise, DecodeError(`unknown constructor "${s}"`))
-        | #Single(_) => \"@@"(raise, DecodeError(`constructor "${s}" doesn't expect arguments`))
+        | exception Not_found => raise(DecodeError(`unknown constructor "${s}"`))
+        | #Single(_) => raise(DecodeError(`constructor "${s}" doesn't expect arguments`))
         | #Decode(d) => decode'(d, args)
         },
       (),
@@ -260,3 +305,13 @@ let option_as_constr = f =>
   )
 
 let adapter = (normalize: Js.Json.t => Js.Json.t, reader: t<'a>, json) => reader(normalize(json))
+
+let map = (f, decode, json) => json->decode->f
+
+let optional = (decode, json) => {
+  try {
+    json->decode->Some
+  } catch {
+  | DecodeError(_) => None
+  }
+}

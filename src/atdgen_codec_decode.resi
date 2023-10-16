@@ -1,3 +1,5 @@
+exception DecodeError(string)
+
 type t<'a> = Js.Json.t => 'a
 
 let make: (Js.Json.t => 'a) => t<'a>

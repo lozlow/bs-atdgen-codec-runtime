@@ -30,7 +30,7 @@ module Type_field = {
         switch o |> Js.Json.classify {
         | JSONObject(obj) =>
           Js.Dict.set(obj, type_field_name, v)
-          Json_encode.jsonDict(obj)
+          JsonCombinators.Json_Encode.jsonDict(obj)
         | _ => json
         }
       | _ => json
